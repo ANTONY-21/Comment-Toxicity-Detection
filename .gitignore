@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Data (download from Kaggle - too big for GitHub)
+train.csv
+test.csv
+
+# Trained model artifacts can be large - keep config + metrics, ignore model
+artifacts/toxicity_model.keras
+artifacts/*.h5
