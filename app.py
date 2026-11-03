@@ -11,6 +11,7 @@ Run from terminal (after `python toxicity.py` has been executed):
 """
 
 import os
+import sys
 import json
 import numpy as np
 import pandas as pd
@@ -22,9 +23,15 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing.text import tokenizer_from_json
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
+# Anchor all paths to this file's folder so the app works no matter
+# which directory `streamlit run` is launched from.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 from toxicity import clean_text, LABEL_COLS  # reuse the same cleaning logic
 
-ARTIFACTS_DIR = "artifacts"
+ARTIFACTS_DIR = os.path.join(BASE_DIR, "artifacts")
 MODEL_PATH = os.path.join(ARTIFACTS_DIR, "toxicity_model.keras")
 TOK_PATH = os.path.join(ARTIFACTS_DIR, "tokenizer.json")
 CFG_PATH = os.path.join(ARTIFACTS_DIR, "config.json")

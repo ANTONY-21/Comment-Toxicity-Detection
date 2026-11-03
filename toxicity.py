@@ -28,9 +28,9 @@ WHY the design choices:
       better at catching context like "not a bad guy" vs "a bad guy"
     - Embedding layer is trained from scratch (no pretrained vectors) to keep
       the project self-contained; can be swapped for GloVe later
-    - We subsample to SAMPLE_SIZE rows so it trains in ~10-20 minutes on CPU
-      (the full 562k rows would take many hours and is not necessary for a
-      capstone demo)
+    - We subsample to SAMPLE_SIZE rows so it trains in a few minutes on CPU
+      (the full 160k rows would take considerably longer and is not necessary
+      for a capstone demo)
 
 Run from terminal:
     pip install -r requirements.txt
@@ -75,8 +75,8 @@ PLOTS_DIR = os.path.join(ARTIFACTS_DIR, "plots")
 LABEL_COLS = ["toxic", "severe_toxic", "obscene",
               "threat", "insult", "identity_hate"]
 
-# Keep training fast on CPU. Full data has 562k rows; 50k is plenty for a
-# capstone demo and trains in 10-20 min on a laptop.
+# Keep training fast on CPU. Full data has ~160k rows; 50k is plenty for a
+# capstone demo and trains in a few minutes on a laptop.
 SAMPLE_SIZE = 50_000
 RANDOM_STATE = 42
 

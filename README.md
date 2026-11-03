@@ -12,8 +12,11 @@ Online platforms can't manually moderate millions of comments. Goal: build a dee
 
 ## 2. Dataset
 **Jigsaw Toxic Comment Classification Challenge** (Kaggle)
-- `train.csv` — ~562k rows: `id`, `comment_text`, 6 binary labels
-- `test.csv` — ~553k rows: `id`, `comment_text` (unlabelled Kaggle holdout)
+- `train.csv` — 159,571 rows: `id`, `comment_text`, 6 binary labels
+- `test.csv` — 153,164 rows: `id`, `comment_text` (unlabelled Kaggle holdout)
+
+Label balance is heavily skewed (`toxic` 9.6%, `threat` only 0.3%), which is why
+evaluation uses per-label precision / recall / F1 / ROC-AUC instead of plain accuracy.
 
 Download the CSVs from Kaggle and place them next to this README.
 (They are gitignored — don't commit them.)
