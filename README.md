@@ -41,6 +41,7 @@ Comment Toxicity Detection/
 ├── toxicity.py                   # full modular pipeline (local)
 ├── toxicity_colab.ipynb          # same pipeline, ready for Google Colab
 ├── app.py                        # Streamlit app (single + bulk prediction)
+├── toxicity_bulk.py              # safe bulk scoring and blank-row handling
 ├── requirements.txt
 ├── README.md
 ├── INTERVIEW_GUIDE.md            # live-evaluation study guide
@@ -68,10 +69,15 @@ python toxicity.py              # trains + saves artifacts
 streamlit run app.py            # launches the Streamlit dashboard
 ```
 
+If the saved model, tokenizer and configuration already exist in `artifacts/`, start the app directly without retraining. The model file is gitignored, so a fresh clone requires the artifacts from a trusted source or a training run before inference works. Install dependencies in a virtual environment appropriate for your operating system. For hosted deployment, include or securely provide compatible artifacts and verify the host has enough memory; do not claim a public demo URL until the deployed app has been tested.
+
 ## 6. Streamlit app features
 - 🔍 **Single comment** — paste a comment, see a verdict + per-label probability bar chart
 - 📂 **Bulk CSV** — upload a CSV with a `comment_text` column, get back a CSV with 6 probability columns + `is_toxic` flag
 - 📊 **Model metrics** — per-label accuracy, precision, recall, F1, ROC-AUC (from training)
+- 📚 **Data and examples** — training-label counts when `train.csv` is available, plus sample comments
+
+Empty CSVs and missing `comment_text` columns are reported clearly. Empty comment rows remain unscored rather than being treated as safe. The dashboard warns that the saved validation run has zero recall for threat and identity hate; metrics are not recomputed when the prediction threshold changes. Use predictions as a prompt for human review, not as a guarantee that text is safe.
 
 ## 7. Business use cases
 | Use case | How the model helps |

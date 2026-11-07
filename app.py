@@ -30,6 +30,7 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from toxicity import clean_text, LABEL_COLS  # reuse the same cleaning logic
+from toxicity_bulk import score_comments
 
 ARTIFACTS_DIR = os.path.join(BASE_DIR, "artifacts")
 MODEL_PATH = os.path.join(ARTIFACTS_DIR, "toxicity_model.keras")
@@ -63,12 +64,21 @@ def predict_batch(texts, model, tokenizer, max_len):
     return model.predict(seqs, verbose=0)
 
 
+@st.cache_data
+def training_label_summary(path, modified_at):
+    """Summarize training labels without displaying the original comments."""
+    training = pd.read_csv(path, usecols=['comment_text', *LABEL_COLS])
+    return len(training), int(training['comment_text'].isna().sum()), training[LABEL_COLS].sum()
+
+
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
 st.title("⚠️ Comment Toxicity Detector")
 st.caption("Deep-learning model (BiLSTM) that flags toxic, obscene, "
            "threatening, insulting and identity-hate comments.")
+st.info("Predictions are screening aids, not final decisions. Rare categories "
+        "are frequently missed in the saved evaluation; use human review.")
 
 model, tokenizer, cfg = load_artifacts()
 if model is None:
@@ -86,9 +96,10 @@ st.sidebar.markdown("**Labels predicted:**")
 for lbl in LABEL_COLS:
     st.sidebar.markdown(f"- {lbl}")
 
-tab1, tab2, tab3 = st.tabs(["🔍 Single comment",
-                            "📂 Bulk CSV",
-                            "📊 Model metrics"])
+tab1, tab2, tab3, tab4 = st.tabs(["🔍 Single comment",
+                                  "📂 Bulk CSV",
+                                  "📊 Model metrics",
+                                  "📚 Data and examples"])
 
 # ---------------------------------------------------------------------------
 # Tab 1 - single comment
@@ -97,15 +108,18 @@ with tab1:
     st.subheader("Type a comment")
     text = st.text_area("Comment", height=140,
                         placeholder="Paste a comment to check ...")
-    if st.button("Predict", type="primary") and text.strip():
+    clicked = st.button("Predict", type="primary")
+    if clicked and not text.strip():
+        st.warning("Enter a comment before selecting Predict.")
+    if clicked and text.strip():
         probs = predict_batch([text], model, tokenizer, MAX_LEN)[0]
         result = {lbl: float(p) for lbl, p in zip(LABEL_COLS, probs)}
         is_toxic = any(p >= threshold for p in probs)
 
         if is_toxic:
-            st.error("⚠️  This comment is flagged as **TOXIC**")
+            st.error("⚠️  One or more labels are above the selected threshold.")
         else:
-            st.success("✅  This comment looks **clean**")
+            st.success("No label reached the selected threshold. This does not guarantee the comment is safe.")
 
         # Bar chart of probabilities
         df = (pd.DataFrame({"label": LABEL_COLS, "probability": probs})
@@ -133,24 +147,28 @@ with tab2:
                "Output is the same CSV with one probability column per label.")
     upload = st.file_uploader("Choose CSV", type=["csv"])
     if upload:
-        df = pd.read_csv(upload)
-        if "comment_text" not in df.columns:
+        try:
+            df = pd.read_csv(upload)
+        except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError) as exc:
+            st.error(f"Could not read this CSV: {exc}. Use a valid UTF-8 CSV file.")
+            df = None
+        if df is None:
+            pass
+        elif "comment_text" not in df.columns:
             st.error("CSV is missing a `comment_text` column.")
+        elif df.empty:
+            st.warning("The CSV has headers but no rows to predict.")
         else:
-            st.info(f"{len(df):,} rows received - running predictions ...")
-            probs = predict_batch(df["comment_text"].astype(str).tolist(),
-                                  model, tokenizer, MAX_LEN)
-            for i, lbl in enumerate(LABEL_COLS):
-                df[f"prob_{lbl}"] = probs[:, i].round(4)
-            df["is_toxic"] = (probs >= threshold).any(axis=1)
-            st.success("Done.")
-            st.dataframe(df.head(50), use_container_width=True)
-            st.download_button(
-                "Download predictions CSV",
-                data=df.to_csv(index=False).encode("utf-8"),
-                file_name="toxicity_predictions.csv",
-                mime="text/csv",
-            )
+            df, scored = score_comments(df, LABEL_COLS, threshold,
+                                        lambda texts: predict_batch(texts, model, tokenizer, MAX_LEN))
+            st.info(f"{len(df):,} rows received; {scored:,} non-empty comments were scored.")
+            if scored:
+                st.success("Done. Blank comments were left unscored.")
+                st.dataframe(df.head(50), use_container_width=True)
+                st.download_button("Download predictions CSV", data=df.to_csv(index=False).encode("utf-8"),
+                                   file_name="toxicity_predictions.csv", mime="text/csv")
+            else:
+                st.warning("No non-empty comments were found to score.")
 
 # ---------------------------------------------------------------------------
 # Tab 3 - model metrics
@@ -161,6 +179,11 @@ with tab3:
         m = pd.read_csv(METRICS_PATH)
         st.dataframe(m, use_container_width=True)
         st.metric("Macro ROC-AUC", f"{m['roc_auc'].mean():.4f}")
+        zero_recall = m.loc[m['recall'].eq(0), 'label'].astype(str).tolist()
+        if zero_recall:
+            st.warning("Zero recall in the saved evaluation for: " + ", ".join(zero_recall) +
+                       ". The model did not identify positive examples of these labels in that run.")
+        st.caption("The table records the saved validation run; changing the sidebar threshold does not recalculate these metrics.")
         fig, ax = plt.subplots(figsize=(8, 4))
         m_sorted = m.sort_values("roc_auc")
         ax.barh(m_sorted["label"], m_sorted["roc_auc"], color="#10b981")
@@ -170,6 +193,28 @@ with tab3:
         st.pyplot(fig)
     else:
         st.info("metrics.csv not found - re-run `python toxicity.py`.")
+
+with tab4:
+    st.subheader("Training data insights")
+    training_path = os.path.join(BASE_DIR, "train.csv")
+    if os.path.exists(training_path):
+        try:
+            rows, missing_text, label_counts = training_label_summary(training_path, os.path.getmtime(training_path))
+            st.write(f"Training file: {rows:,} comments; {missing_text:,} missing comment texts.")
+            st.dataframe(pd.DataFrame({'label': LABEL_COLS, 'positive comments': [int(label_counts[x]) for x in LABEL_COLS],
+                                       'share (%)': [round(float(label_counts[x]) * 100 / rows, 2) if rows else 0 for x in LABEL_COLS]}),
+                         use_container_width=True, hide_index=True)
+            st.caption("Labels can overlap, so their counts should not be added together.")
+        except (OSError, ValueError, pd.errors.ParserError) as exc:
+            st.warning(f"Could not summarize the training CSV: {exc}")
+    else:
+        st.info("Training CSV not found. Download the dataset to see label frequencies; predictions can still run with the saved model.")
+    st.subheader("Sample test cases")
+    st.write("Try a neutral comment such as ‘Thank you for your help.’ and compare it with ‘You are stupid.’ These are examples, not a comprehensive model test.")
+    sample_path = os.path.join(BASE_DIR, "sample_comments.csv")
+    if os.path.exists(sample_path):
+        with open(sample_path, "rb") as f:
+            st.download_button("Download sample comments CSV", f.read(), "sample_comments.csv", "text/csv")
 
 st.divider()
 st.caption("Built with TensorFlow / Keras Bidirectional LSTM and Streamlit.")
